@@ -1,0 +1,854 @@
+'use client'
+
+import { useState, useMemo } from 'react'
+import {
+  Undo2,
+  Check,
+  X,
+  Shield,
+  Target,
+  UserPlus,
+  Users,
+  ChevronDown,
+  Disc,
+  FlagOff,
+  BarChart3,
+  TrendingUp,
+} from 'lucide-react'
+import { useGame } from '@/lib/game-context'
+import { calculatePlayerStats, calculateTeamStats } from '@/lib/store'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
+import { cn } from '@/lib/utils'
+
+type ActionMode = null | 'completion' | 'turnover' | 'turnover_caused' | 'score' | 'pull'
+type ScoreStep = 'type' | 'scorer' | 'assister'
+
+export function GameTrackerView() {
+  const {
+    games,
+    players,
+    activeGameId,
+    setActiveGameId,
+    getGameRoster,
+    setGameRoster,
+    addPlayerToGameRoster,
+    addPlayer,
+    addStat,
+    undoLastStat,
+    updateGame,
+    getGameStats
+  } = useGame()
+
+  const [actionMode, setActionMode] = useState<ActionMode>(null)
+  const [scoreStep, setScoreStep] = useState<ScoreStep>('type')
+  const [selectedScorer, setSelectedScorer] = useState<string | null>(null)
+  const [completionStep, setCompletionStep] = useState<'thrower' | 'catcher'>('thrower')
+  const [selectedThrower, setSelectedThrower] = useState<string | null>(null)
+  const [showRosterDialog, setShowRosterDialog] = useState(false)
+  const [showQuickAddDialog, setShowQuickAddDialog] = useState(false)
+  const [showAddPlayerDialog, setShowAddPlayerDialog] = useState(false)
+  const [newPlayerName, setNewPlayerName] = useState('')
+  const [newPlayerNumber, setNewPlayerNumber] = useState('')
+  const [pointStartIndex, setPointStartIndex] = useState(0)
+  const [pendingScore, setPendingScore] = useState(false)
+  const [showFinalizeDialog, setShowFinalizeDialog] = useState(false)
+  const [showStatsOverlay, setShowStatsOverlay] = useState(false)
+
+  const activeGame = games.find(g => g.id === activeGameId)
+  const gameRosterIds = activeGameId ? getGameRoster(activeGameId) : []
+  // Players are already sorted by sort_order from context; preserve that order here
+  const gameRoster = players.filter(p => gameRosterIds.includes(p.id))
+  const availablePlayers = players.filter(p => !gameRosterIds.includes(p.id))
+  
+  const gameStats = activeGameId ? getGameStats(activeGameId) : []
+  const currentPointStats = useMemo(() => {
+    return gameStats.slice(pointStartIndex)
+  }, [gameStats, pointStartIndex])
+  
+  // Auto-thrower = last catcher, but only since the last possession change
+  const lastCatcher = useMemo(() => {
+    let lastTurnoverIdx = -1
+    for (let i = currentPointStats.length - 1; i >= 0; i--) {
+      const t = currentPointStats[i].type
+      if (t === 'turnover' || t === 'turnover_caused') { lastTurnoverIdx = i; break }
+    }
+    const receptionsSince = currentPointStats.slice(lastTurnoverIdx + 1).filter(s => s.type === 'reception')
+    return receptionsSince.length > 0 ? (receptionsSince[receptionsSince.length - 1].playerId ?? null) : null
+  }, [currentPointStats])
+
+  // If no active game, show game selector
+  if (!activeGame) {
+    const upcomingGames = games.filter(g => !g.isComplete).sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    )
+    
+    return (
+      <div className="p-4 space-y-4">
+        <h2 className="text-xl font-bold text-foreground">Select Game</h2>
+        <p className="text-muted-foreground">Choose a game to track</p>
+        
+        {upcomingGames.length === 0 ? (
+          <Card className="border-dashed">
+            <CardContent className="py-8 text-center text-muted-foreground">
+              No games available. Add a game from the Schedule tab.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {upcomingGames.map((game) => (
+              <Card 
+                key={game.id}
+                className="cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => setActiveGameId(game.id)}
+              >
+                <CardContent className="py-4">
+                  <p className="font-semibold text-foreground">vs {game.opponent}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {new Date(game.date).toLocaleDateString()}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const resetCompletionState = () => {
+    setCompletionStep('thrower')
+    setSelectedThrower(null)
+  }
+
+  const handleAction = (action: ActionMode) => {
+    if (actionMode === action) {
+      setActionMode(null)
+      setScoreStep('type')
+      setSelectedScorer(null)
+      resetCompletionState()
+    } else {
+      setActionMode(action)
+      if (action === 'score') setScoreStep('type')
+      if (action === 'completion') {
+        // Auto-fill thrower if we know the last catcher
+        if (lastCatcher) {
+          setSelectedThrower(lastCatcher)
+          setCompletionStep('catcher')
+        } else {
+          resetCompletionState()
+        }
+      }
+    }
+  }
+
+  const handlePlayerSelect = (playerId: string) => {
+    if (!activeGameId) return
+
+    if (actionMode === 'completion') {
+      if (completionStep === 'thrower') {
+        setSelectedThrower(playerId)
+        setCompletionStep('catcher')
+        // stay in completion mode, wait for catcher tap
+      } else {
+        // completionStep === 'catcher'
+        addStat(activeGameId, 'completion', selectedThrower ?? undefined, playerId)
+        resetCompletionState()
+        setActionMode(null)
+      }
+    } else if (actionMode === 'turnover') {
+      addStat(activeGameId, 'turnover', playerId)
+      resetCompletionState()
+      setActionMode(null)
+    } else if (actionMode === 'turnover_caused') {
+      addStat(activeGameId, 'turnover_caused', playerId)
+      resetCompletionState()
+      setActionMode(null)
+    } else if (actionMode === 'pull') {
+      addStat(activeGameId, 'pull', playerId)
+      resetCompletionState()
+      setActionMode(null)
+    } else if (actionMode === 'score' && scoreStep === 'scorer') {
+      if (lastCatcher) {
+        addStat(activeGameId, 'goal', playerId)
+        addStat(activeGameId, 'assist', lastCatcher)
+        setActionMode(null)
+        setScoreStep('type')
+        setSelectedScorer(null)
+        setPendingScore(true)
+      } else {
+        setSelectedScorer(playerId)
+        setScoreStep('assister')
+      }
+    } else if (actionMode === 'score' && scoreStep === 'assister') {
+      addStat(activeGameId, 'goal', selectedScorer!)
+      addStat(activeGameId, 'assist', playerId)
+      setActionMode(null)
+      setScoreStep('type')
+      setSelectedScorer(null)
+      setPendingScore(true)
+    }
+  }
+
+  const handleScoreType = (type: 'our' | 'opponent' | 'callahan') => {
+    if (!activeGameId) return
+
+    if (type === 'opponent') {
+      addStat(activeGameId, 'opponent_score')
+      setActionMode(null)
+      setScoreStep('type')
+      setPendingScore(true)
+    } else if (type === 'callahan') {
+      setScoreStep('scorer')
+    } else {
+      setScoreStep('scorer')
+    }
+  }
+
+  const handleCallahanScorer = (playerId: string) => {
+    if (!activeGameId) return
+    addStat(activeGameId, 'callahan', playerId)
+    setActionMode(null)
+    setScoreStep('type')
+    setSelectedScorer(null)
+    setPendingScore(true)
+  }
+
+  const handleConfirmPoint = () => {
+    setPendingScore(false)
+    setPointStartIndex(gameStats.length)
+    resetCompletionState()
+  }
+
+  const handleUndo = () => {
+    if (activeGameId) {
+      undoLastStat(activeGameId)
+    }
+  }
+
+  const handleFinalizeGame = async () => {
+    if (!activeGameId) return
+    await updateGame(activeGameId, { isComplete: true })
+    setShowFinalizeDialog(false)
+    setActiveGameId(null)
+  }
+
+  const handleAddPlayerToRoster = (playerId: string) => {
+    if (activeGameId) {
+      addPlayerToGameRoster(activeGameId, playerId)
+    }
+  }
+
+  const handleToggleRosterPlayer = (playerId: string) => {
+    if (!activeGameId) return
+    const currentRoster = getGameRoster(activeGameId)
+    if (currentRoster.includes(playerId)) {
+      setGameRoster(activeGameId, currentRoster.filter(id => id !== playerId))
+    } else {
+      setGameRoster(activeGameId, [...currentRoster, playerId])
+    }
+  }
+
+  const handleAddNewPlayer = async () => {
+    if (newPlayerName && newPlayerNumber && activeGameId) {
+      const newId = await addPlayer(newPlayerName, parseInt(newPlayerNumber))
+      if (newId) await addPlayerToGameRoster(activeGameId, newId)
+      setNewPlayerName('')
+      setNewPlayerNumber('')
+      setShowAddPlayerDialog(false)
+      setShowQuickAddDialog(false)
+    }
+  }
+
+  const getStatLabel = (type: string) => {
+    switch (type) {
+      case 'completion': return 'Threw'
+      case 'reception': return 'Caught'
+      case 'turnover': return 'Turn'
+      case 'turnover_caused': return 'D-Block'
+      case 'goal': return 'Goal'
+      case 'assist': return 'Assist'
+      case 'callahan': return 'Callahan!'
+      case 'opponent_score': return 'Opp Score'
+      case 'pull': return 'Pull'
+      default: return type
+    }
+  }
+
+  const getPlayerName = (playerId?: string) => {
+    if (!playerId) return ''
+    const player = players.find(p => p.id === playerId)
+    if (!player) return ''
+    const firstName = player.name.split(' ')[0]
+    const lastInitial = player.name.split(' ')[1]?.[0] || ''
+    return lastInitial ? `${firstName} ${lastInitial}.` : firstName
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Score Header */}
+      <div className="bg-card border-b border-border px-3 py-2">
+        <div className="flex items-center justify-between">
+          <button 
+            onClick={() => setActiveGameId(null)}
+            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-0.5"
+          >
+            <ChevronDown className="size-3 rotate-90" />
+            Change
+          </button>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted-foreground">vs {activeGame.opponent}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-bold text-primary">{activeGame.ourScore}</span>
+              <span className="text-sm text-muted-foreground">-</span>
+              <span className="text-lg font-bold text-foreground">{activeGame.opponentScore}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowStatsOverlay(true)}
+              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors border border-muted-foreground/30 hover:border-foreground/50 rounded px-1.5 py-0.5"
+            >
+              <BarChart3 className="size-3" />
+              Stats
+            </button>
+            <button
+              onClick={() => setShowRosterDialog(true)}
+              className="text-xs text-primary hover:text-primary/80 flex items-center gap-0.5"
+            >
+              <Users className="size-3" />
+              ({gameRoster.length})
+            </button>
+            <button
+              onClick={() => setShowFinalizeDialog(true)}
+              className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1 transition-colors border border-muted-foreground/30 hover:border-destructive/50 rounded px-1.5 py-0.5"
+            >
+              <FlagOff className="size-3" />
+              End Game
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Action Buttons / Next Point Banner */}
+      <div className="px-3 py-2 border-b border-border bg-card/50">
+        {pendingScore ? (
+          /* ── Next point confirmation banner ── */
+          <div className="flex flex-col items-center gap-2 py-1">
+            <p className="text-sm font-semibold text-foreground">Point over?</p>
+            <div className="flex gap-2 w-full">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 text-xs"
+                onClick={() => setPendingScore(false)}
+              >
+                Not yet
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1 text-xs bg-green-600 hover:bg-green-700 gap-1"
+                onClick={handleConfirmPoint}
+              >
+                <Disc className="size-3" />
+                Start next point
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Pull Button - only at start of point */}
+            {currentPointStats.length === 0 && (
+              <div className="mb-2">
+                <Button
+                  variant={actionMode === 'pull' ? 'default' : 'outline'}
+                  size="sm"
+                  className={cn(
+                    'w-full flex items-center justify-center gap-2 py-1.5',
+                    actionMode === 'pull' && 'bg-orange-600 hover:bg-orange-700 border-orange-600'
+                  )}
+                  onClick={() => handleAction('pull')}
+                >
+                  <Disc className="size-4" />
+                  <span className="text-xs">Pull</span>
+                </Button>
+              </div>
+            )}
+
+            <div className="grid grid-cols-4 gap-1.5">
+              <Button
+                variant={actionMode === 'completion' ? 'default' : 'outline'}
+                size="sm"
+                className={cn(
+                  'flex flex-col h-auto py-1.5 gap-0.5',
+                  actionMode === 'completion' && 'bg-green-600 hover:bg-green-700 border-green-600'
+                )}
+                onClick={() => handleAction('completion')}
+              >
+                <Check className="size-4" />
+                <span className="text-[10px]">Complete</span>
+              </Button>
+
+              <Button
+                variant={actionMode === 'turnover' ? 'default' : 'outline'}
+                size="sm"
+                className={cn(
+                  'flex flex-col h-auto py-1.5 gap-0.5',
+                  actionMode === 'turnover' && 'bg-red-600 hover:bg-red-700 border-red-600'
+                )}
+                onClick={() => handleAction('turnover')}
+              >
+                <X className="size-4" />
+                <span className="text-[10px]">Turnover</span>
+              </Button>
+
+              <Button
+                variant={actionMode === 'turnover_caused' ? 'default' : 'outline'}
+                size="sm"
+                className={cn(
+                  'flex flex-col h-auto py-1.5 gap-0.5',
+                  actionMode === 'turnover_caused' && 'bg-blue-600 hover:bg-blue-700 border-blue-600'
+                )}
+                onClick={() => handleAction('turnover_caused')}
+              >
+                <Shield className="size-4" />
+                <span className="text-[10px]">D-Block</span>
+              </Button>
+
+              <Button
+                variant={actionMode === 'score' ? 'default' : 'outline'}
+                size="sm"
+                className={cn(
+                  'flex flex-col h-auto py-1.5 gap-0.5',
+                  actionMode === 'score' && 'bg-primary hover:bg-primary/90'
+                )}
+                onClick={() => handleAction('score')}
+              >
+                <Target className="size-4" />
+                <span className="text-[10px]">Score</span>
+              </Button>
+            </div>
+
+            {/* Score Type Selection */}
+            {actionMode === 'score' && scoreStep === 'type' && (
+              <div className="mt-2 grid grid-cols-3 gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="bg-primary/20 border-primary text-primary hover:bg-primary/30 text-xs"
+                  onClick={() => handleScoreType('our')}
+                >
+                  Our Goal
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  onClick={() => handleScoreType('opponent')}
+                >
+                  Their Goal
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="bg-yellow-500/20 border-yellow-500 text-yellow-500 hover:bg-yellow-500/30 text-xs"
+                  onClick={() => handleScoreType('callahan')}
+                >
+                  Callahan
+                </Button>
+              </div>
+            )}
+
+            {/* Auto-thrower banner for completion */}
+            {actionMode === 'completion' && completionStep === 'catcher' && selectedThrower && (
+              <div className="mt-2 flex items-center justify-between px-2 py-1.5 rounded-lg bg-green-500/10 border border-green-500/30">
+                <span className="text-xs text-green-600 font-medium">
+                  Thrower: {getPlayerName(selectedThrower)} ✓
+                </span>
+                <button
+                  className="text-xs text-muted-foreground underline underline-offset-2"
+                  onClick={() => { setCompletionStep('thrower'); setSelectedThrower(null) }}
+                >
+                  change
+                </button>
+              </div>
+            )}
+
+            {/* Instruction Text */}
+            {actionMode && (
+              <p className="text-center text-xs text-muted-foreground mt-2">
+                {actionMode === 'completion' && completionStep === 'thrower' && 'Tap who threw it'}
+                {actionMode === 'completion' && completionStep === 'catcher' && 'Tap who caught it'}
+                {actionMode === 'turnover' && 'Tap player who turned it over'}
+                {actionMode === 'turnover_caused' && 'Tap player who got the D'}
+                {actionMode === 'pull' && 'Tap player who pulled'}
+                {actionMode === 'score' && scoreStep === 'scorer' && (lastCatcher ? `Tap scorer (assist: ${getPlayerName(lastCatcher)})` : 'Tap the scorer')}
+                {actionMode === 'score' && scoreStep === 'assister' && 'Tap the assister'}
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Player Grid */}
+      <div className="flex-1 overflow-y-auto px-2 py-2">
+        {gameRoster.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-muted-foreground mb-4">No players in game roster</p>
+            <Button onClick={() => setShowRosterDialog(true)}>
+              <Users className="size-4 mr-2" />
+              Set Up Roster
+            </Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-1.5">
+            {gameRoster.map((player) => (
+              <button
+                key={player.id}
+                onClick={() => {
+                  if (actionMode === 'score' && scoreStep === 'type') return
+                  if (actionMode === 'score' && scoreStep === 'scorer' && scoreStep === 'scorer') {
+                    // Check if this is a callahan flow
+                    handlePlayerSelect(player.id)
+                  } else {
+                    handlePlayerSelect(player.id)
+                  }
+                }}
+                disabled={pendingScore || !actionMode || (actionMode === 'score' && scoreStep === 'type')}
+                className={cn(
+                  'flex flex-col items-center justify-center py-2 px-1 rounded-lg border transition-all',
+                  'bg-card border-border',
+                  actionMode && !(actionMode === 'score' && scoreStep === 'type')
+                    ? 'hover:bg-primary/20 hover:border-primary active:scale-95 cursor-pointer'
+                    : 'opacity-60',
+                  selectedScorer === player.id && 'ring-2 ring-primary bg-primary/20',
+                  selectedThrower === player.id && 'ring-2 ring-green-500 bg-green-500/20'
+                )}
+              >
+                <span className="text-sm font-bold text-primary">#{player.number}</span>
+                <span className="text-sm font-medium text-foreground truncate max-w-full">
+                  {player.name.split(' ')[0]} {player.name.split(' ')[1]?.[0] || ''}.
+                </span>
+              </button>
+            ))}
+            
+            {/* Quick Add Player Button */}
+            <button
+              onClick={() => setShowQuickAddDialog(true)}
+              className="flex flex-col items-center justify-center py-2 px-1 rounded-lg border border-dashed border-muted-foreground/50 text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
+            >
+              <UserPlus className="size-5" />
+              <span className="text-xs">Add</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Current Point Activity & Undo */}
+      <div className="border-t border-border bg-card px-2 py-1.5">
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={handleUndo}
+            disabled={currentPointStats.length === 0}
+            className="text-muted-foreground hover:text-foreground h-6 px-2 text-xs"
+          >
+            <Undo2 className="size-3 mr-1" />
+            Undo
+          </Button>
+          <div className="flex gap-1 overflow-x-auto flex-1">
+            {currentPointStats.length === 0 ? (
+              <span className="text-xs text-muted-foreground">New point</span>
+            ) : (
+              currentPointStats.map((stat) => (
+                <span 
+                  key={stat.id}
+                  className={cn(
+                    'px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap',
+                    stat.type === 'completion' && 'bg-green-500/20 text-green-600',
+                    stat.type === 'reception' && 'bg-green-400/20 text-green-500',
+                    stat.type === 'turnover' && 'bg-red-500/20 text-red-600',
+                    stat.type === 'turnover_caused' && 'bg-blue-500/20 text-blue-600',
+                    stat.type === 'goal' && 'bg-primary/20 text-primary',
+                    stat.type === 'assist' && 'bg-primary/20 text-primary',
+                    stat.type === 'callahan' && 'bg-yellow-500/20 text-yellow-600',
+                    stat.type === 'opponent_score' && 'bg-muted text-muted-foreground',
+                    stat.type === 'pull' && 'bg-orange-500/20 text-orange-600'
+                  )}
+                >
+                  {getStatLabel(stat.type)} {getPlayerName(stat.playerId)}
+                </span>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Roster Management Dialog */}
+      <Dialog open={showRosterDialog} onOpenChange={setShowRosterDialog}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Game Roster</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm text-muted-foreground mb-2">
+                Select players available for this game
+              </p>
+              <div className="space-y-2">
+                {players.map((player) => (
+                  <button
+                    key={player.id}
+                    onClick={() => handleToggleRosterPlayer(player.id)}
+                    className={cn(
+                      'w-full flex items-center gap-3 p-3 rounded-lg border transition-colors',
+                      gameRosterIds.includes(player.id)
+                        ? 'bg-primary/20 border-primary'
+                        : 'bg-card border-border hover:bg-muted'
+                    )}
+                  >
+                    <div className={cn(
+                      'size-6 rounded-full border-2 flex items-center justify-center',
+                      gameRosterIds.includes(player.id)
+                        ? 'border-primary bg-primary'
+                        : 'border-muted-foreground'
+                    )}>
+                      {gameRosterIds.includes(player.id) && (
+                        <Check className="size-4 text-primary-foreground" />
+                      )}
+                    </div>
+                    <span className="font-bold text-primary">#{player.number}</span>
+                    <span className="text-foreground">{player.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            <Button 
+              variant="outline" 
+              className="w-full"
+              onClick={() => {
+                setShowRosterDialog(false)
+                setShowAddPlayerDialog(true)
+              }}
+            >
+              <UserPlus className="size-4 mr-2" />
+              Add New Player
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Finalize Game Dialog */}
+      <Dialog open={showFinalizeDialog} onOpenChange={setShowFinalizeDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>End Game?</DialogTitle>
+            <DialogDescription>
+              Final score: <strong>{activeGame.ourScore} – {activeGame.opponentScore}</strong> vs {activeGame.opponent}.
+              This will lock the game and move it to Recent Results. You won&apos;t be able to add more stats.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowFinalizeDialog(false)}>
+              Keep Scoring
+            </Button>
+            <Button variant="destructive" onClick={handleFinalizeGame}>
+              End Game
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick Add Dialog — roster players not yet in game, plus new player option */}
+      <Dialog open={showQuickAddDialog} onOpenChange={setShowQuickAddDialog}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add Player to Game</DialogTitle>
+          </DialogHeader>
+
+          {availablePlayers.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">From your roster:</p>
+              {availablePlayers
+                .sort((a, b) => a.number - b.number)
+                .map(player => (
+                  <button
+                    key={player.id}
+                    onClick={() => {
+                      handleAddPlayerToRoster(player.id)
+                      setShowQuickAddDialog(false)
+                    }}
+                    className="w-full flex items-center gap-3 p-3 rounded-lg border border-border bg-card hover:bg-muted transition-colors text-left"
+                  >
+                    <span className="font-bold text-primary">#{player.number}</span>
+                    <span className="text-foreground">{player.name}</span>
+                  </button>
+                ))}
+            </div>
+          )}
+
+          <div className={availablePlayers.length > 0 ? 'border-t border-border pt-3' : ''}>
+            <p className="text-sm text-muted-foreground mb-2">
+              {availablePlayers.length > 0 ? 'Or add someone new:' : 'No roster players left to add. Add someone new:'}
+            </p>
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              onClick={() => {
+                setShowQuickAddDialog(false)
+                setShowAddPlayerDialog(true)
+              }}
+            >
+              <UserPlus className="size-4" />
+              New player
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Live Stats Overlay */}
+      <Dialog open={showStatsOverlay} onOpenChange={setShowStatsOverlay}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Live Stats — vs {activeGame?.opponent}</DialogTitle>
+          </DialogHeader>
+          <LiveStatsContent gameId={activeGameId!} />
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Player Dialog */}
+      <Dialog open={showAddPlayerDialog} onOpenChange={setShowAddPlayerDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Player</DialogTitle>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel>Name</FieldLabel>
+              <Input
+                placeholder="Player name"
+                value={newPlayerName}
+                onChange={(e) => setNewPlayerName(e.target.value)}
+              />
+            </Field>
+            <Field>
+              <FieldLabel>Number</FieldLabel>
+              <Input
+                type="number"
+                placeholder="Jersey number"
+                value={newPlayerNumber}
+                onChange={(e) => setNewPlayerNumber(e.target.value)}
+              />
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddPlayerDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddNewPlayer}>Add Player</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function LiveStatsContent({ gameId }: { gameId: string }) {
+  const { players, stats, getGameRoster } = useGame()
+  const gameStats = stats.filter(s => s.gameId === gameId)
+  const rosterIds = getGameRoster(gameId)
+  const teamStats = calculateTeamStats(gameStats, gameId)
+
+  const playerStats = players
+    .filter(p => rosterIds.includes(p.id))
+    .map(p => ({ player: p, stats: calculatePlayerStats(p.id, gameStats, gameId) }))
+    .filter(p =>
+      p.stats.goals > 0 || p.stats.assists > 0 || p.stats.callahans > 0 ||
+      p.stats.completions > 0 || p.stats.receptions > 0 || p.stats.turnoversCaused > 0
+    )
+    .sort((a, b) => {
+      const aScore = a.stats.goals + a.stats.assists + a.stats.callahans
+      const bScore = b.stats.goals + b.stats.assists + b.stats.callahans
+      return bScore - aScore
+    })
+
+  return (
+    <div className="space-y-4">
+      {/* Team totals */}
+      <div className="grid grid-cols-3 gap-2 text-center">
+        {[
+          { label: 'Goals', value: teamStats.goals + teamStats.callahans },
+          { label: 'Thrown', value: teamStats.completions },
+          { label: 'Caught', value: teamStats.receptions },
+          { label: 'Turnovers', value: teamStats.turnovers },
+          { label: 'D-Blocks', value: teamStats.turnoversCaused },
+          { label: 'Callahans', value: teamStats.callahans },
+        ].map(({ label, value }) => (
+          <div key={label} className="bg-muted/50 rounded-lg py-2 px-1">
+            <p className="text-lg font-bold text-foreground">{value}</p>
+            <p className="text-[10px] text-muted-foreground">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Per-player */}
+      {playerStats.length === 0 ? (
+        <p className="text-center text-sm text-muted-foreground py-2">No stats recorded yet</p>
+      ) : (
+        <div className="space-y-2">
+          {playerStats.map(({ player, stats: s }) => {
+            const totalThrows = s.completions + s.turnovers
+            const pct = totalThrows > 0 ? Math.round((s.completions / totalThrows) * 100) : null
+            return (
+              <div key={player.id} className="bg-card border border-border rounded-lg px-3 py-2">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="font-bold text-primary text-sm">#{player.number}</span>
+                  <span className="text-sm font-medium text-foreground">{player.name}</span>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  {(s.goals + s.callahans) > 0 && (
+                    <span><span className="font-semibold text-foreground">{s.goals + s.callahans}</span> G</span>
+                  )}
+                  {s.assists > 0 && (
+                    <span><span className="font-semibold text-foreground">{s.assists}</span> A</span>
+                  )}
+                  {s.completions > 0 && (
+                    <span><span className="font-semibold text-green-500">{s.completions}</span> thrown</span>
+                  )}
+                  {s.receptions > 0 && (
+                    <span><span className="font-semibold text-green-400">{s.receptions}</span> caught</span>
+                  )}
+                  {s.turnoversCaused > 0 && (
+                    <span><span className="font-semibold text-blue-500">{s.turnoversCaused}</span> D</span>
+                  )}
+                  {s.turnovers > 0 && (
+                    <span><span className="font-semibold text-red-500">{s.turnovers}</span> turn</span>
+                  )}
+                  {pct !== null && (
+                    <span className={cn(
+                      'font-semibold',
+                      pct >= 80 ? 'text-green-500' : pct >= 60 ? 'text-yellow-500' : 'text-red-500'
+                    )}>{pct}%</span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
