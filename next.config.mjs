@@ -6,6 +6,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  serverExternalPackages: ['jspdf', 'jspdf-autotable', 'fflate'],
 }
 
 export default nextConfig

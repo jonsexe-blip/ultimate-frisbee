@@ -4,8 +4,6 @@ import { useState, useMemo } from 'react'
 import {
   Undo2,
   Check,
-  X,
-  Shield,
   Target,
   UserPlus,
   Users,
@@ -13,7 +11,6 @@ import {
   Disc,
   FlagOff,
   BarChart3,
-  TrendingUp,
 } from 'lucide-react'
 import { useGame } from '@/lib/game-context'
 import { calculatePlayerStats, calculateTeamStats } from '@/lib/store'
@@ -31,7 +28,7 @@ import { Input } from '@/components/ui/input'
 import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
 import { cn } from '@/lib/utils'
 
-type ActionMode = null | 'completion' | 'turnover' | 'turnover_caused' | 'score' | 'pull'
+type ActionMode = null | 'score' | 'pull'
 type ScoreStep = 'type' | 'scorer' | 'assister'
 
 export function GameTrackerView() {
@@ -53,8 +50,6 @@ export function GameTrackerView() {
   const [actionMode, setActionMode] = useState<ActionMode>(null)
   const [scoreStep, setScoreStep] = useState<ScoreStep>('type')
   const [selectedScorer, setSelectedScorer] = useState<string | null>(null)
-  const [completionStep, setCompletionStep] = useState<'thrower' | 'catcher'>('thrower')
-  const [selectedThrower, setSelectedThrower] = useState<string | null>(null)
   const [showRosterDialog, setShowRosterDialog] = useState(false)
   const [showQuickAddDialog, setShowQuickAddDialog] = useState(false)
   const [showAddPlayerDialog, setShowAddPlayerDialog] = useState(false)
@@ -76,15 +71,9 @@ export function GameTrackerView() {
     return gameStats.slice(pointStartIndex)
   }, [gameStats, pointStartIndex])
   
-  // Auto-thrower = last catcher, but only since the last possession change
   const lastCatcher = useMemo(() => {
-    let lastTurnoverIdx = -1
-    for (let i = currentPointStats.length - 1; i >= 0; i--) {
-      const t = currentPointStats[i].type
-      if (t === 'turnover' || t === 'turnover_caused') { lastTurnoverIdx = i; break }
-    }
-    const receptionsSince = currentPointStats.slice(lastTurnoverIdx + 1).filter(s => s.type === 'reception')
-    return receptionsSince.length > 0 ? (receptionsSince[receptionsSince.length - 1].playerId ?? null) : null
+    const receptions = currentPointStats.filter(s => s.type === 'reception')
+    return receptions.length > 0 ? (receptions[receptions.length - 1].playerId ?? null) : null
   }, [currentPointStats])
 
   // If no active game, show game selector
@@ -126,57 +115,22 @@ export function GameTrackerView() {
     )
   }
 
-  const resetCompletionState = () => {
-    setCompletionStep('thrower')
-    setSelectedThrower(null)
-  }
-
   const handleAction = (action: ActionMode) => {
     if (actionMode === action) {
       setActionMode(null)
       setScoreStep('type')
       setSelectedScorer(null)
-      resetCompletionState()
     } else {
       setActionMode(action)
       if (action === 'score') setScoreStep('type')
-      if (action === 'completion') {
-        // Auto-fill thrower if we know the last catcher
-        if (lastCatcher) {
-          setSelectedThrower(lastCatcher)
-          setCompletionStep('catcher')
-        } else {
-          resetCompletionState()
-        }
-      }
     }
   }
 
   const handlePlayerSelect = (playerId: string) => {
     if (!activeGameId) return
 
-    if (actionMode === 'completion') {
-      if (completionStep === 'thrower') {
-        setSelectedThrower(playerId)
-        setCompletionStep('catcher')
-        // stay in completion mode, wait for catcher tap
-      } else {
-        // completionStep === 'catcher'
-        addStat(activeGameId, 'completion', selectedThrower ?? undefined, playerId)
-        resetCompletionState()
-        setActionMode(null)
-      }
-    } else if (actionMode === 'turnover') {
-      addStat(activeGameId, 'turnover', playerId)
-      resetCompletionState()
-      setActionMode(null)
-    } else if (actionMode === 'turnover_caused') {
-      addStat(activeGameId, 'turnover_caused', playerId)
-      resetCompletionState()
-      setActionMode(null)
-    } else if (actionMode === 'pull') {
+    if (actionMode === 'pull') {
       addStat(activeGameId, 'pull', playerId)
-      resetCompletionState()
       setActionMode(null)
     } else if (actionMode === 'score' && scoreStep === 'scorer') {
       if (lastCatcher) {
@@ -227,7 +181,6 @@ export function GameTrackerView() {
   const handleConfirmPoint = () => {
     setPendingScore(false)
     setPointStartIndex(gameStats.length)
-    resetCompletionState()
   }
 
   const handleUndo = () => {
@@ -385,59 +338,18 @@ export function GameTrackerView() {
               </div>
             )}
 
-            <div className="grid grid-cols-4 gap-1.5">
-              <Button
-                variant={actionMode === 'completion' ? 'default' : 'outline'}
-                size="sm"
-                className={cn(
-                  'flex flex-col h-auto py-1.5 gap-0.5',
-                  actionMode === 'completion' && 'bg-green-600 hover:bg-green-700 border-green-600'
-                )}
-                onClick={() => handleAction('completion')}
-              >
-                <Check className="size-4" />
-                <span className="text-[10px]">Complete</span>
-              </Button>
-
-              <Button
-                variant={actionMode === 'turnover' ? 'default' : 'outline'}
-                size="sm"
-                className={cn(
-                  'flex flex-col h-auto py-1.5 gap-0.5',
-                  actionMode === 'turnover' && 'bg-red-600 hover:bg-red-700 border-red-600'
-                )}
-                onClick={() => handleAction('turnover')}
-              >
-                <X className="size-4" />
-                <span className="text-[10px]">Turnover</span>
-              </Button>
-
-              <Button
-                variant={actionMode === 'turnover_caused' ? 'default' : 'outline'}
-                size="sm"
-                className={cn(
-                  'flex flex-col h-auto py-1.5 gap-0.5',
-                  actionMode === 'turnover_caused' && 'bg-blue-600 hover:bg-blue-700 border-blue-600'
-                )}
-                onClick={() => handleAction('turnover_caused')}
-              >
-                <Shield className="size-4" />
-                <span className="text-[10px]">D-Block</span>
-              </Button>
-
-              <Button
-                variant={actionMode === 'score' ? 'default' : 'outline'}
-                size="sm"
-                className={cn(
-                  'flex flex-col h-auto py-1.5 gap-0.5',
-                  actionMode === 'score' && 'bg-primary hover:bg-primary/90'
-                )}
-                onClick={() => handleAction('score')}
-              >
-                <Target className="size-4" />
-                <span className="text-[10px]">Score</span>
-              </Button>
-            </div>
+            <Button
+              variant={actionMode === 'score' ? 'default' : 'outline'}
+              size="sm"
+              className={cn(
+                'w-full flex items-center justify-center gap-2 py-1.5',
+                actionMode === 'score' && 'bg-primary hover:bg-primary/90'
+              )}
+              onClick={() => handleAction('score')}
+            >
+              <Target className="size-4" />
+              <span className="text-xs">Score</span>
+            </Button>
 
             {/* Score Type Selection */}
             {actionMode === 'score' && scoreStep === 'type' && (
@@ -469,28 +381,9 @@ export function GameTrackerView() {
               </div>
             )}
 
-            {/* Auto-thrower banner for completion */}
-            {actionMode === 'completion' && completionStep === 'catcher' && selectedThrower && (
-              <div className="mt-2 flex items-center justify-between px-2 py-1.5 rounded-lg bg-green-500/10 border border-green-500/30">
-                <span className="text-xs text-green-600 font-medium">
-                  Thrower: {getPlayerName(selectedThrower)} ✓
-                </span>
-                <button
-                  className="text-xs text-muted-foreground underline underline-offset-2"
-                  onClick={() => { setCompletionStep('thrower'); setSelectedThrower(null) }}
-                >
-                  change
-                </button>
-              </div>
-            )}
-
             {/* Instruction Text */}
             {actionMode && (
               <p className="text-center text-xs text-muted-foreground mt-2">
-                {actionMode === 'completion' && completionStep === 'thrower' && 'Tap who threw it'}
-                {actionMode === 'completion' && completionStep === 'catcher' && 'Tap who caught it'}
-                {actionMode === 'turnover' && 'Tap player who turned it over'}
-                {actionMode === 'turnover_caused' && 'Tap player who got the D'}
                 {actionMode === 'pull' && 'Tap player who pulled'}
                 {actionMode === 'score' && scoreStep === 'scorer' && (lastCatcher ? `Tap scorer (assist: ${getPlayerName(lastCatcher)})` : 'Tap the scorer')}
                 {actionMode === 'score' && scoreStep === 'assister' && 'Tap the assister'}
@@ -531,8 +424,7 @@ export function GameTrackerView() {
                   actionMode && !(actionMode === 'score' && scoreStep === 'type')
                     ? 'hover:bg-primary/20 hover:border-primary active:scale-95 cursor-pointer'
                     : 'opacity-60',
-                  selectedScorer === player.id && 'ring-2 ring-primary bg-primary/20',
-                  selectedThrower === player.id && 'ring-2 ring-green-500 bg-green-500/20'
+                  selectedScorer === player.id && 'ring-2 ring-primary bg-primary/20'
                 )}
               >
                 <span className="text-sm font-bold text-primary">#{player.number}</span>
@@ -776,8 +668,7 @@ function LiveStatsContent({ gameId }: { gameId: string }) {
     .filter(p => rosterIds.includes(p.id))
     .map(p => ({ player: p, stats: calculatePlayerStats(p.id, gameStats, gameId) }))
     .filter(p =>
-      p.stats.goals > 0 || p.stats.assists > 0 || p.stats.callahans > 0 ||
-      p.stats.completions > 0 || p.stats.receptions > 0 || p.stats.turnoversCaused > 0
+      p.stats.goals > 0 || p.stats.assists > 0 || p.stats.callahans > 0
     )
     .sort((a, b) => {
       const aScore = a.stats.goals + a.stats.assists + a.stats.callahans
@@ -791,10 +682,7 @@ function LiveStatsContent({ gameId }: { gameId: string }) {
       <div className="grid grid-cols-3 gap-2 text-center">
         {[
           { label: 'Goals', value: teamStats.goals + teamStats.callahans },
-          { label: 'Thrown', value: teamStats.completions },
-          { label: 'Caught', value: teamStats.receptions },
-          { label: 'Turnovers', value: teamStats.turnovers },
-          { label: 'D-Blocks', value: teamStats.turnoversCaused },
+          { label: 'Assists', value: teamStats.assists },
           { label: 'Callahans', value: teamStats.callahans },
         ].map(({ label, value }) => (
           <div key={label} className="bg-muted/50 rounded-lg py-2 px-1">
@@ -809,44 +697,25 @@ function LiveStatsContent({ gameId }: { gameId: string }) {
         <p className="text-center text-sm text-muted-foreground py-2">No stats recorded yet</p>
       ) : (
         <div className="space-y-2">
-          {playerStats.map(({ player, stats: s }) => {
-            const totalThrows = s.completions + s.turnovers
-            const pct = totalThrows > 0 ? Math.round((s.completions / totalThrows) * 100) : null
-            return (
-              <div key={player.id} className="bg-card border border-border rounded-lg px-3 py-2">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="font-bold text-primary text-sm">#{player.number}</span>
-                  <span className="text-sm font-medium text-foreground">{player.name}</span>
-                </div>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                  {(s.goals + s.callahans) > 0 && (
-                    <span><span className="font-semibold text-foreground">{s.goals + s.callahans}</span> G</span>
-                  )}
-                  {s.assists > 0 && (
-                    <span><span className="font-semibold text-foreground">{s.assists}</span> A</span>
-                  )}
-                  {s.completions > 0 && (
-                    <span><span className="font-semibold text-green-500">{s.completions}</span> thrown</span>
-                  )}
-                  {s.receptions > 0 && (
-                    <span><span className="font-semibold text-green-400">{s.receptions}</span> caught</span>
-                  )}
-                  {s.turnoversCaused > 0 && (
-                    <span><span className="font-semibold text-blue-500">{s.turnoversCaused}</span> D</span>
-                  )}
-                  {s.turnovers > 0 && (
-                    <span><span className="font-semibold text-red-500">{s.turnovers}</span> turn</span>
-                  )}
-                  {pct !== null && (
-                    <span className={cn(
-                      'font-semibold',
-                      pct >= 80 ? 'text-green-500' : pct >= 60 ? 'text-yellow-500' : 'text-red-500'
-                    )}>{pct}%</span>
-                  )}
-                </div>
+          {playerStats.map(({ player, stats: s }) => (
+            <div key={player.id} className="bg-card border border-border rounded-lg px-3 py-2">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="font-bold text-primary text-sm">#{player.number}</span>
+                <span className="text-sm font-medium text-foreground">{player.name}</span>
               </div>
-            )
-          })}
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                {(s.goals + s.callahans) > 0 && (
+                  <span><span className="font-semibold text-foreground">{s.goals + s.callahans}</span> G</span>
+                )}
+                {s.assists > 0 && (
+                  <span><span className="font-semibold text-foreground">{s.assists}</span> A</span>
+                )}
+                {s.callahans > 0 && (
+                  <span><span className="font-semibold text-yellow-500">{s.callahans}</span> C</span>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
