@@ -85,7 +85,6 @@ export async function exportGameBoxScore(
 
   const rows = rostered.map(p => {
     const s = calculatePlayerStats(p.id, stats, game.id)
-    const pulls = stats.filter(e => e.gameId === game.id && e.playerId === p.id && e.type === 'pull').length
     const pts = s.goals + s.assists + s.callahans
     return [
       `#${p.number}`,
@@ -93,7 +92,6 @@ export async function exportGameBoxScore(
       s.goals || '–',
       s.assists || '–',
       s.callahans || '–',
-      pulls || '–',
       pts || '–',
     ]
   })
@@ -101,23 +99,21 @@ export async function exportGameBoxScore(
   const totals = rostered.reduce(
     (acc, p) => {
       const s = calculatePlayerStats(p.id, stats, game.id)
-      const pulls = stats.filter(e => e.gameId === game.id && e.playerId === p.id && e.type === 'pull').length
       acc.goals += s.goals
       acc.assists += s.assists
       acc.callahans += s.callahans
-      acc.pulls += pulls
       acc.pts += s.goals + s.assists + s.callahans
       return acc
     },
-    { goals: 0, assists: 0, callahans: 0, pulls: 0, pts: 0 }
+    { goals: 0, assists: 0, callahans: 0, pts: 0 }
   )
 
   autoTable(doc, {
     startY: 130,
     margin: { left: margin, right: margin },
-    head: [['#', 'Player', 'G', 'A', 'C', 'Pulls', 'Pts']],
+    head: [['#', 'Player', 'G', 'A', 'C', 'Pts']],
     body: rows,
-    foot: [['', 'TEAM', totals.goals, totals.assists, totals.callahans, totals.pulls, totals.pts]],
+    foot: [['', 'TEAM', totals.goals, totals.assists, totals.callahans, totals.pts]],
     styles: { font: 'helvetica', fontSize: 10, cellPadding: 6, textColor: DARK },
     headStyles: { fillColor: PRIMARY, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
     footStyles: { fillColor: DARK, textColor: [255, 255, 255], fontStyle: 'bold' },
@@ -125,11 +121,10 @@ export async function exportGameBoxScore(
     columnStyles: {
       0: { cellWidth: 36, halign: 'center' },
       1: { cellWidth: 'auto' },
-      2: { cellWidth: 40, halign: 'center' },
-      3: { cellWidth: 40, halign: 'center' },
-      4: { cellWidth: 40, halign: 'center' },
-      5: { cellWidth: 44, halign: 'center' },
-      6: { cellWidth: 40, halign: 'center', fontStyle: 'bold' },
+      2: { cellWidth: 44, halign: 'center' },
+      3: { cellWidth: 44, halign: 'center' },
+      4: { cellWidth: 44, halign: 'center' },
+      5: { cellWidth: 44, halign: 'center', fontStyle: 'bold' },
     },
     didDrawPage: (data) => {
       const y = doc.internal.pageSize.getHeight() - 20
@@ -143,7 +138,7 @@ export async function exportGameBoxScore(
   const finalY = (doc as any).lastAutoTable.finalY + 14
   doc.setFontSize(8)
   doc.setTextColor(140, 140, 140)
-  doc.text('G = Goals  ·  A = Assists  ·  C = Callahans  ·  Pts = G + A + C', margin, finalY)
+  doc.text('G = Goals  ·  A = Assists  ·  C = Callahans  ·  Pts = Goals + Assists + Callahans', margin, finalY)
 
   const opponent = game.opponent.replace(/[^a-zA-Z0-9]/g, '-')
   const dateStr = new Date(game.date).toISOString().slice(0, 10)

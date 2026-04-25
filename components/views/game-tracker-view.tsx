@@ -28,7 +28,7 @@ import { Input } from '@/components/ui/input'
 import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
 import { cn } from '@/lib/utils'
 
-type ActionMode = null | 'score' | 'pull'
+type ActionMode = null | 'score'
 type ScoreStep = 'type' | 'scorer' | 'assister'
 
 export function GameTrackerView() {
@@ -129,10 +129,7 @@ export function GameTrackerView() {
   const handlePlayerSelect = (playerId: string) => {
     if (!activeGameId) return
 
-    if (actionMode === 'pull') {
-      addStat(activeGameId, 'pull', playerId)
-      setActionMode(null)
-    } else if (actionMode === 'score' && scoreStep === 'scorer') {
+    if (actionMode === 'score' && scoreStep === 'scorer') {
       if (lastCatcher) {
         addStat(activeGameId, 'goal', playerId)
         addStat(activeGameId, 'assist', lastCatcher)
@@ -320,24 +317,6 @@ export function GameTrackerView() {
           </div>
         ) : (
           <>
-            {/* Pull Button - only at start of point */}
-            {currentPointStats.length === 0 && (
-              <div className="mb-2">
-                <Button
-                  variant={actionMode === 'pull' ? 'default' : 'outline'}
-                  size="sm"
-                  className={cn(
-                    'w-full flex items-center justify-center gap-2 py-1.5',
-                    actionMode === 'pull' && 'bg-orange-600 hover:bg-orange-700 border-orange-600'
-                  )}
-                  onClick={() => handleAction('pull')}
-                >
-                  <Disc className="size-4" />
-                  <span className="text-xs">Pull</span>
-                </Button>
-              </div>
-            )}
-
             <Button
               variant={actionMode === 'score' ? 'default' : 'outline'}
               size="sm"
@@ -384,7 +363,6 @@ export function GameTrackerView() {
             {/* Instruction Text */}
             {actionMode && (
               <p className="text-center text-xs text-muted-foreground mt-2">
-                {actionMode === 'pull' && 'Tap player who pulled'}
                 {actionMode === 'score' && scoreStep === 'scorer' && (lastCatcher ? `Tap scorer (assist: ${getPlayerName(lastCatcher)})` : 'Tap the scorer')}
                 {actionMode === 'score' && scoreStep === 'assister' && 'Tap the assister'}
               </p>
@@ -475,8 +453,7 @@ export function GameTrackerView() {
                     stat.type === 'goal' && 'bg-primary/20 text-primary',
                     stat.type === 'assist' && 'bg-primary/20 text-primary',
                     stat.type === 'callahan' && 'bg-yellow-500/20 text-yellow-600',
-                    stat.type === 'opponent_score' && 'bg-muted text-muted-foreground',
-                    stat.type === 'pull' && 'bg-orange-500/20 text-orange-600'
+                    stat.type === 'opponent_score' && 'bg-muted text-muted-foreground'
                   )}
                 >
                   {getStatLabel(stat.type)} {getPlayerName(stat.playerId)}
