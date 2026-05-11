@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import { ChevronDown, Target, FileDown } from 'lucide-react'
 import { useGame } from '@/lib/game-context'
-import { calculatePlayerStats, calculateTeamStats } from '@/lib/store'
+import { calculatePlayerStats, calculateTeamStats, buildPlayByPlay } from '@/lib/store'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -21,6 +21,11 @@ export function GameStatsView() {
     if (!selectedGame) return null
     return calculateTeamStats(stats, selectedGame.id)
   }, [selectedGame, stats])
+
+  const playByPlay = useMemo(() => {
+    if (!selectedGame) return []
+    return buildPlayByPlay(stats, selectedGame.id, players)
+  }, [selectedGame, stats, players])
 
   const playerStatsForGame = useMemo(() => {
     if (!selectedGame) return []
@@ -184,6 +189,42 @@ export function GameStatsView() {
               ))
             )}
           </div>
+
+          {/* Play by Play */}
+          {playByPlay.length > 0 && (
+            <div className="mt-6 space-y-1.5">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">Play by Play</h3>
+              {playByPlay.map((play, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2 rounded-lg text-sm',
+                    play.type === 'opponent_score'
+                      ? 'bg-muted/50 text-muted-foreground'
+                      : 'bg-primary/5 border border-primary/20'
+                  )}
+                >
+                  <span className="font-mono text-xs text-muted-foreground w-8 shrink-0">
+                    {play.ourScore}-{play.theirScore}
+                  </span>
+                  {play.type === 'opponent_score' ? (
+                    <span>{selectedGame.opponent} scored</span>
+                  ) : play.type === 'callahan' ? (
+                    <span className="text-foreground">
+                      <span className="font-semibold text-yellow-500">{play.scorer?.name ?? 'Unknown'}</span>
+                      <span className="text-muted-foreground ml-1">(Callahan)</span>
+                    </span>
+                  ) : (
+                    <span className="text-foreground">
+                      <span className="font-semibold">{play.assister?.name ?? 'Unknown'}</span>
+                      <span className="text-muted-foreground mx-1.5">to</span>
+                      <span className="font-semibold text-primary">{play.scorer?.name ?? 'Unknown'}</span>
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>

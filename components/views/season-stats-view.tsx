@@ -3,7 +3,7 @@
 import { useMemo } from 'react'
 import { Target, Award, Medal, FileDown } from 'lucide-react'
 import { useGame } from '@/lib/game-context'
-import { calculatePlayerStats, calculateTeamStats } from '@/lib/store'
+import { calculatePlayerStats, calculateTeamStats, buildAssistGoalCombos } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
@@ -43,6 +43,11 @@ export function SeasonStatsView() {
   const assistLeaders = useMemo(() => [...seasonPlayerStats]
     .sort((a, b) => b.stats.assists - a.stats.assists)
     .slice(0, 5), [seasonPlayerStats])
+
+  const assistGoalCombos = useMemo(() =>
+    buildAssistGoalCombos(completedStats, players),
+    [completedStats, players]
+  )
 
 
   if (completedGames.length === 0) {
@@ -135,6 +140,7 @@ export function SeasonStatsView() {
         <TabsList className="w-full">
           <TabsTrigger value="leaders" className="flex-1">Leaders</TabsTrigger>
           <TabsTrigger value="players" className="flex-1">All Players</TabsTrigger>
+          <TabsTrigger value="combos" className="flex-1">Combos</TabsTrigger>
         </TabsList>
 
         <TabsContent value="leaders" className="mt-4 space-y-6">
@@ -229,6 +235,35 @@ export function SeasonStatsView() {
                   </CardContent>
                 </Card>
               ))
+          )}
+        </TabsContent>
+
+        <TabsContent value="combos" className="mt-4 space-y-2">
+          {assistGoalCombos.length === 0 ? (
+            <p className="text-center text-muted-foreground py-4">No assist-to-goal combinations recorded yet</p>
+          ) : (
+            assistGoalCombos.map(({ assister, scorer, count }, i) => (
+              <div
+                key={`${assister.id}-${scorer.id}`}
+                className={cn(
+                  'flex items-center gap-3 p-3 rounded-lg',
+                  i === 0 ? 'bg-primary/10 border border-primary/30' : 'bg-card border border-border'
+                )}
+              >
+                <span className={cn(
+                  'size-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0',
+                  i === 0 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                )}>
+                  {i + 1}
+                </span>
+                <span className="flex-1 text-foreground text-sm">
+                  <span className="font-semibold">{assister.name}</span>
+                  <span className="text-muted-foreground mx-1.5">to</span>
+                  <span className="font-semibold text-primary">{scorer.name}</span>
+                </span>
+                <span className="font-bold text-foreground">{count}x</span>
+              </div>
+            ))
           )}
         </TabsContent>
       </Tabs>

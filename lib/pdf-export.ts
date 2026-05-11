@@ -1,5 +1,5 @@
 import type { Player, Game, StatEvent, GameRoster } from './types'
-import { calculatePlayerStats } from './store'
+import { calculatePlayerStats, buildPlayByPlay, buildAssistGoalCombos } from './store'
 
 const TEAM_NAME = 'Central Revolution'
 const PRIMARY: [number, number, number] = [220, 38, 38]
@@ -139,6 +139,50 @@ export async function exportGameBoxScore(
   doc.setFontSize(8)
   doc.setTextColor(140, 140, 140)
   doc.text('G = Goals  ·  A = Assists  ·  C = Callahans  ·  Pts = Goals + Assists + Callahans', margin, finalY)
+
+  // ── Play by Play ─────────────────────────────────────────
+  const plays = buildPlayByPlay(stats, game.id, players)
+  if (plays.length > 0) {
+    const pbpStartY = (doc as any).lastAutoTable.finalY + 28
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...DARK)
+    doc.text('PLAY BY PLAY', margin, pbpStartY)
+
+    const pbpRows = plays.map(play => {
+      const score = `${play.ourScore}-${play.theirScore}`
+      let description = ''
+      if (play.type === 'opponent_score') {
+        description = `${game.opponent} scored`
+      } else if (play.type === 'callahan') {
+        description = `${play.scorer?.name ?? 'Unknown'} (Callahan)`
+      } else {
+        description = `${play.assister?.name ?? 'Unknown'} to ${play.scorer?.name ?? 'Unknown'}`
+      }
+      return [score, description]
+    })
+
+    autoTable(doc, {
+      startY: pbpStartY + 8,
+      margin: { left: margin, right: margin },
+      head: [['Score', 'Play']],
+      body: pbpRows,
+      styles: { font: 'helvetica', fontSize: 9, cellPadding: 5, textColor: DARK },
+      headStyles: { fillColor: [60, 60, 60] as [number, number, number], textColor: [255, 255, 255], fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: LIGHT_GRAY },
+      columnStyles: {
+        0: { cellWidth: 52, halign: 'center', fontStyle: 'bold' },
+        1: { cellWidth: 'auto' },
+      },
+      didDrawPage: (data) => {
+        const y = doc.internal.pageSize.getHeight() - 20
+        doc.setFontSize(8)
+        doc.setTextColor(160, 160, 160)
+        doc.text(TEAM_NAME, margin, y)
+        doc.text(`Page ${data.pageNumber}`, pageW - margin, y, { align: 'right' })
+      },
+    })
+  }
 
   const opponent = game.opponent.replace(/[^a-zA-Z0-9]/g, '-')
   const dateStr = new Date(game.date).toISOString().slice(0, 10)
@@ -287,6 +331,38 @@ export async function exportSeasonStats(
           data.cell.styles.textColor =
             v === 'W' ? [22, 163, 74] : v === 'L' ? [220, 38, 38] : [100, 100, 100]
         }
+      },
+    })
+  }
+
+  // ── Assist → Goal Combinations ────────────────────────────
+  const combos = buildAssistGoalCombos(completedStats, players)
+  if (combos.length > 0) {
+    const combosStartY = (doc as any).lastAutoTable.finalY + 28
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...DARK)
+    doc.text('ASSIST TO GOAL COMBINATIONS', margin, combosStartY)
+
+    autoTable(doc, {
+      startY: combosStartY + 8,
+      margin: { left: margin, right: margin },
+      head: [['Assister', 'Scorer', 'Times']],
+      body: combos.map(c => [c.assister.name, c.scorer.name, c.count]),
+      styles: { font: 'helvetica', fontSize: 9, cellPadding: 5, textColor: DARK },
+      headStyles: { fillColor: [60, 60, 60] as [number, number, number], textColor: [255, 255, 255], fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: LIGHT_GRAY },
+      columnStyles: {
+        0: { cellWidth: 'auto' },
+        1: { cellWidth: 'auto' },
+        2: { cellWidth: 44, halign: 'center', fontStyle: 'bold' },
+      },
+      didDrawPage: (data) => {
+        const y = doc.internal.pageSize.getHeight() - 20
+        doc.setFontSize(8)
+        doc.setTextColor(160, 160, 160)
+        doc.text(TEAM_NAME, margin, y)
+        doc.text(`Page ${data.pageNumber}`, pageW - margin, y, { align: 'right' })
       },
     })
   }
