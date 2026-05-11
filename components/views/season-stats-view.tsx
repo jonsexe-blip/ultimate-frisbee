@@ -44,6 +44,11 @@ export function SeasonStatsView() {
     .sort((a, b) => b.stats.assists - a.stats.assists)
     .slice(0, 5), [seasonPlayerStats])
 
+  const callahanLeaders = useMemo(() => [...seasonPlayerStats]
+    .filter(p => p.stats.callahans > 0)
+    .sort((a, b) => b.stats.callahans - a.stats.callahans)
+    .slice(0, 5), [seasonPlayerStats])
+
   const assistGoalCombos = useMemo(() =>
     buildAssistGoalCombos(completedStats, players),
     [completedStats, players]
@@ -202,6 +207,37 @@ export function SeasonStatsView() {
             </div>
           </section>
 
+          {/* Callahan Leaders */}
+          {callahanLeaders.length > 0 && (
+            <section>
+              <div className="flex items-center gap-2 mb-3">
+                <Award className="size-4 text-yellow-500" />
+                <h4 className="font-semibold text-foreground">Callahan Leaders</h4>
+              </div>
+              <div className="space-y-2">
+                {callahanLeaders.map(({ player, stats }, index) => (
+                  <div
+                    key={player.id}
+                    className={cn(
+                      'flex items-center gap-3 p-3 rounded-lg',
+                      index === 0 ? 'bg-yellow-500/10 border border-yellow-500/30' : 'bg-card border border-border'
+                    )}
+                  >
+                    <span className={cn(
+                      'size-6 rounded-full flex items-center justify-center text-xs font-bold',
+                      index === 0 ? 'bg-yellow-500 text-white' : 'bg-muted text-muted-foreground'
+                    )}>
+                      {index + 1}
+                    </span>
+                    <span className="font-bold text-primary">#{player.number}</span>
+                    <span className="flex-1 text-foreground">{player.name}</span>
+                    <span className="font-bold text-foreground">{stats.callahans}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
         </TabsContent>
 
         <TabsContent value="players" className="mt-4 space-y-2">
@@ -225,10 +261,11 @@ export function SeasonStatsView() {
                       {[
                         { label: 'Goals', value: stats.goals + stats.callahans },
                         { label: 'Assists', value: stats.assists },
+                        ...(stats.callahans > 0 ? [{ label: 'Callahans', value: stats.callahans }] : []),
                       ].map(({ label, value }) => (
                         <div key={label} className="flex items-center justify-between text-sm">
                           <span className="text-muted-foreground">{label}</span>
-                          <span className="font-semibold text-foreground">{value}</span>
+                          <span className={cn('font-semibold', label === 'Callahans' ? 'text-yellow-500' : 'text-foreground')}>{value}</span>
                         </div>
                       ))}
                     </div>
