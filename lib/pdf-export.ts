@@ -77,6 +77,24 @@ export async function exportGameBoxScore(
     pageW / 2, 90, { align: 'center' }
   )
 
+  // ── Team Summary Bar ─────────────────────────────────────
+  const gameStatsAll = stats.filter(s => s.gameId === game.id)
+  const teamGoals = gameStatsAll.filter(s => s.type === 'goal').length
+  const teamAssists = gameStatsAll.filter(s => s.type === 'assist').length
+  const teamCallahans = gameStatsAll.filter(s => s.type === 'callahan').length
+
+  doc.setFillColor(245, 245, 245)
+  doc.rect(0, 118, pageW, 20, 'F')
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.setTextColor(80, 80, 80)
+  const summaryItems = [
+    `Goals: ${teamGoals + teamCallahans}`,
+    `Assists: ${teamAssists}`,
+    `Callahans: ${teamCallahans}`,
+  ]
+  doc.text(summaryItems.join('     '), pageW / 2, 130, { align: 'center' })
+
   // ── Player Stats Table ────────────────────────────────────
   const rosterIds = gameRosters.find(r => r.gameId === game.id)?.playerIds ?? []
   const rostered = players
@@ -109,7 +127,7 @@ export async function exportGameBoxScore(
   )
 
   autoTable(doc, {
-    startY: 130,
+    startY: 148,
     margin: { left: margin, right: margin },
     head: [['#', 'Player', 'G', 'A', 'C', 'Pts']],
     body: rows,

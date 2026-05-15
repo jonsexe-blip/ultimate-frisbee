@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { Target, Award, Medal, FileDown } from 'lucide-react'
+import { Target, Award, Medal, FileDown, TrendingUp } from 'lucide-react'
 import { useGame } from '@/lib/game-context'
 import { calculatePlayerStats, calculateTeamStats, buildAssistGoalCombos } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -111,25 +111,37 @@ export function SeasonStatsView() {
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
           Team Totals
         </h3>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <Card>
-            <CardContent className="py-4 flex items-center gap-3">
-              <div className="size-10 rounded-full bg-primary/20 flex items-center justify-center">
-                <Target className="size-5 text-primary" />
+            <CardContent className="py-4 flex items-center gap-2">
+              <div className="size-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                <Target className="size-4 text-primary" />
               </div>
               <div>
                 <p className="text-2xl font-bold text-foreground">
                   {seasonTeamStats.goals + seasonTeamStats.callahans}
                 </p>
-                <p className="text-xs text-muted-foreground">Total Goals</p>
+                <p className="text-xs text-muted-foreground">Goals</p>
               </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardContent className="py-4 flex items-center gap-3">
-              <div className="size-10 rounded-full bg-yellow-500/20 flex items-center justify-center">
-                <Award className="size-5 text-yellow-500" />
+            <CardContent className="py-4 flex items-center gap-2">
+              <div className="size-8 rounded-full bg-green-500/20 flex items-center justify-center shrink-0">
+                <TrendingUp className="size-4 text-green-500" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-foreground">{seasonTeamStats.assists}</p>
+                <p className="text-xs text-muted-foreground">Assists</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="py-4 flex items-center gap-2">
+              <div className="size-8 rounded-full bg-yellow-500/20 flex items-center justify-center shrink-0">
+                <Award className="size-4 text-yellow-500" />
               </div>
               <div>
                 <p className="text-2xl font-bold text-foreground">{seasonTeamStats.callahans}</p>

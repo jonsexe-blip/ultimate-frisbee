@@ -49,6 +49,7 @@ export function GameTrackerView() {
 
   const [actionMode, setActionMode] = useState<ActionMode>(null)
   const [scoreStep, setScoreStep] = useState<ScoreStep>('type')
+  const [scoreType, setScoreType] = useState<'goal' | 'callahan'>('goal')
   const [selectedScorer, setSelectedScorer] = useState<string | null>(null)
   const [showRosterDialog, setShowRosterDialog] = useState(false)
   const [showQuickAddDialog, setShowQuickAddDialog] = useState(false)
@@ -119,6 +120,7 @@ export function GameTrackerView() {
     if (actionMode === action) {
       setActionMode(null)
       setScoreStep('type')
+      setScoreType('goal')
       setSelectedScorer(null)
     } else {
       setActionMode(action)
@@ -130,6 +132,15 @@ export function GameTrackerView() {
     if (!activeGameId) return
 
     if (actionMode === 'score' && scoreStep === 'scorer') {
+      if (scoreType === 'callahan') {
+        addStat(activeGameId, 'callahan', playerId)
+        setActionMode(null)
+        setScoreStep('type')
+        setScoreType('goal')
+        setSelectedScorer(null)
+        setPendingScore(true)
+        return
+      }
       if (lastCatcher) {
         addStat(activeGameId, 'goal', playerId)
         addStat(activeGameId, 'assist', lastCatcher)
@@ -160,8 +171,10 @@ export function GameTrackerView() {
       setScoreStep('type')
       setPendingScore(true)
     } else if (type === 'callahan') {
+      setScoreType('callahan')
       setScoreStep('scorer')
     } else {
+      setScoreType('goal')
       setScoreStep('scorer')
     }
   }
@@ -363,7 +376,7 @@ export function GameTrackerView() {
             {/* Instruction Text */}
             {actionMode && (
               <p className="text-center text-xs text-muted-foreground mt-2">
-                {actionMode === 'score' && scoreStep === 'scorer' && (lastCatcher ? `Tap scorer (assist: ${getPlayerName(lastCatcher)})` : 'Tap the scorer')}
+                {actionMode === 'score' && scoreStep === 'scorer' && (scoreType === 'callahan' ? 'Tap the Callahan scorer' : lastCatcher ? `Tap scorer (assist: ${getPlayerName(lastCatcher)})` : 'Tap the scorer')}
                 {actionMode === 'score' && scoreStep === 'assister' && 'Tap the assister'}
               </p>
             )}

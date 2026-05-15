@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { ChevronDown, Target, FileDown } from 'lucide-react'
+import { ChevronDown, Target, Award, Medal, FileDown } from 'lucide-react'
 import { useGame } from '@/lib/game-context'
 import { calculatePlayerStats, calculateTeamStats, buildPlayByPlay } from '@/lib/store'
 import { Card, CardContent } from '@/components/ui/card'
@@ -133,18 +133,44 @@ export function GameStatsView() {
           </Card>
 
           {/* Team Stats Summary */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <Card>
               <CardContent className="py-4">
-                <div className="flex items-center gap-3">
-                  <div className="size-10 rounded-full bg-primary/20 flex items-center justify-center">
-                    <Target className="size-5 text-primary" />
+                <div className="flex items-center gap-2">
+                  <div className="size-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                    <Target className="size-4 text-primary" />
                   </div>
                   <div>
                     <p className="text-2xl font-bold text-foreground">
                       {teamStats.goals + teamStats.callahans}
                     </p>
                     <p className="text-xs text-muted-foreground">Goals</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="py-4">
+                <div className="flex items-center gap-2">
+                  <div className="size-8 rounded-full bg-green-500/20 flex items-center justify-center shrink-0">
+                    <Medal className="size-4 text-green-500" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">{teamStats.assists}</p>
+                    <p className="text-xs text-muted-foreground">Assists</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="py-4">
+                <div className="flex items-center gap-2">
+                  <div className="size-8 rounded-full bg-yellow-500/20 flex items-center justify-center shrink-0">
+                    <Award className="size-4 text-yellow-500" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">{teamStats.callahans}</p>
+                    <p className="text-xs text-muted-foreground">Callahans</p>
                   </div>
                 </div>
               </CardContent>
